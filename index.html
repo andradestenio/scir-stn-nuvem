@@ -508,7 +508,20 @@
     .hours-summary-card.exceeded .hours-excess-tag{
       display:inline-flex;
     }
-</style>
+
+    .setup-overlay{position:fixed;inset:0;z-index:100000;background:linear-gradient(135deg,#091a30,#173a67);display:none;place-items:center;padding:20px}
+    .setup-overlay.open{display:grid}
+    .setup-card{width:min(760px,100%);max-height:92vh;overflow:auto;background:#fff;border-radius:16px;padding:26px;box-shadow:0 30px 90px rgba(0,0,0,.4)}
+    .setup-card h2{margin:0;color:#0f2747}.setup-card h3{margin-top:22px;color:#173a67}
+    .setup-step{border:1px solid #d8dee8;border-radius:12px;padding:16px;margin-top:14px}
+    .setup-step.done{border-color:#2e8b57;background:#f0fff6}
+    .setup-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    .setup-code{white-space:pre-wrap;background:#0c1727;color:#e8eef7;border-radius:10px;padding:14px;max-height:230px;overflow:auto;font:12px/1.45 monospace}
+    .setup-message{display:none;margin-top:12px;padding:10px 12px;border-radius:8px}
+    .setup-message.ok{display:block;background:#dcfce7;color:#166534}.setup-message.error{display:block;background:#fee2e2;color:#991b1b}
+    @media(max-width:700px){.setup-grid{grid-template-columns:1fr}}
+
+  </style>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="./config.js"></script>
@@ -552,6 +565,47 @@
 
 </head>
 <body>
+
+<div id="setupOverlay" class="setup-overlay">
+  <div class="setup-card">
+    <h2>Configuração inicial — NIR CEMETRON</h2>
+    <p class="note">Esta configuração é realizada uma única vez neste navegador.</p>
+    <div class="setup-step" id="setupStep1">
+      <h3>1. Conectar ao Supabase</h3>
+      <div class="setup-grid">
+        <div><label>Project URL</label><input id="setupUrl" value="https://cvtvtquyabfionisdfwg.supabase.co"></div>
+        <div><label>Publishable key</label><input id="setupKey" type="password" placeholder="sb_publishable_..."></div>
+      </div>
+      <div class="actions"><button id="setupSaveConnection" class="btn btn-primary" type="button">Salvar e testar conexão</button></div>
+      <div id="setupConnectionMessage" class="setup-message"></div>
+    </div>
+    <div class="setup-step" id="setupStep2">
+      <h3>2. Instalar estrutura do banco</h3>
+      <p class="note">Copie o script, abra o SQL Editor do Supabase, cole e clique em Run.</p>
+      <div class="actions">
+        <button id="setupCopySql" class="btn btn-secondary" type="button">Copiar script SQL</button>
+        <button id="setupOpenSql" class="btn btn-secondary" type="button">Abrir Supabase SQL Editor</button>
+        <button id="setupVerifySchema" class="btn btn-primary" type="button">Já executei — verificar banco</button>
+      </div>
+      <div id="setupSchemaMessage" class="setup-message"></div>
+      <details><summary>Visualizar script</summary><pre id="setupSqlPreview" class="setup-code"></pre></details>
+    </div>
+    <div class="setup-step" id="setupStep3">
+      <h3>3. Criar administrador inicial</h3>
+      <div class="setup-grid">
+        <div><label>Usuário</label><input id="setupAdminUsername" value="stenio.andrade"></div>
+        <div><label>Senha</label><input id="setupAdminPassword" type="password" value="99663831"></div>
+        <div><label>Nome</label><input id="setupAdminName" value="Stênio Andrade"></div>
+      </div>
+      <div class="actions"><button id="setupCreateAdmin" class="btn btn-primary" type="button">Criar administrador</button></div>
+      <div id="setupAdminMessage" class="setup-message"></div>
+    </div>
+    <div class="actions" style="justify-content:flex-end;margin-top:20px">
+      <button id="setupFinish" class="btn btn-primary" type="button">Concluir e abrir sistema</button>
+    </div>
+  </div>
+</div>
+
 
 <div id="cloudAuthOverlay" class="cloud-auth-overlay">
   <form id="cloudLoginForm" class="cloud-auth-card">
@@ -2368,11 +2422,18 @@ background: $("background").value.trim(),
       box.style.display = "block";
     }
 
+    function readRuntimeConfig(){
+      try{
+        const saved = JSON.parse(localStorage.getItem("nirSupabaseConfig") || "null");
+        if(saved?.SUPABASE_URL && saved?.SUPABASE_ANON_KEY) return saved;
+      }catch(_){}
+      return window.NIR_CONFIG || {};
+    }
+
     function configured(){
-      return window.NIR_CONFIG &&
-        window.NIR_CONFIG.SUPABASE_URL &&
-        window.NIR_CONFIG.SUPABASE_ANON_KEY &&
-        !window.NIR_CONFIG.SUPABASE_URL.includes("SEU-PROJETO");
+      const cfg = readRuntimeConfig();
+      return cfg.SUPABASE_URL && cfg.SUPABASE_ANON_KEY &&
+        !cfg.SUPABASE_URL.includes("SEU-PROJETO");
     }
 
     async function fetchProfile(){
@@ -2469,13 +2530,15 @@ background: $("background").value.trim(),
 
     async function init(){
       if(!configured()){
-        showAuthError("Configure o arquivo config.js com a URL e a chave pública do Supabase.");
+        document.getElementById("cloudAuthOverlay").style.display = "none";
+        document.getElementById("setupOverlay").classList.add("open");
         return;
       }
 
+      const cfg = readRuntimeConfig();
       client = window.supabase.createClient(
-        window.NIR_CONFIG.SUPABASE_URL,
-        window.NIR_CONFIG.SUPABASE_ANON_KEY,
+        cfg.SUPABASE_URL,
+        cfg.SUPABASE_ANON_KEY,
         {auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}}
       );
 
@@ -2505,7 +2568,8 @@ background: $("background").value.trim(),
     function usernameToInternalEmail(username){
       const normalized = normalizeUsername(username);
       if(!normalized) throw new Error("Informe um nome de usuário válido.");
-      const domain = window.NIR_CONFIG.LOGIN_EMAIL_DOMAIN || "nircemetron.local";
+      const cfg = readRuntimeConfig();
+      const domain = cfg.LOGIN_EMAIL_DOMAIN || "nircemetron.local";
       return `${normalized}@${domain}`;
     }
 
@@ -2557,7 +2621,13 @@ background: $("background").value.trim(),
 
     return {
       init, login, logout, scheduleSave, clearCloudState, loadUsers, createUser, toggleUser,
-      isReady:() => ready, profile:() => currentProfile
+      isReady:() => ready, profile:() => currentProfile,
+      getClient:() => client,
+      reinitialize: async () => {
+        ready = false;
+        client = null;
+        await init();
+      }
     };
   })();
 
@@ -2598,6 +2668,98 @@ background: $("background").value.trim(),
     }catch(error){
       alert("Não foi possível cadastrar: " + error.message);
     }
+  });
+
+
+  const NIR_SETUP_SQL = "create extension if not exists pgcrypto;\n\ncreate table if not exists public.profiles (\n  id uuid primary key references auth.users(id) on delete cascade,\n  nome text not null,\n  username text not null unique,\n  email text not null unique,\n  perfil text not null default 'USUARIO' check (perfil in ('ADMIN','USUARIO')),\n  ativo boolean not null default true,\n  created_at timestamptz not null default now(),\n  updated_at timestamptz not null default now()\n);\n\ncreate table if not exists public.user_app_state (\n  user_id uuid primary key references public.profiles(id) on delete cascade,\n  state jsonb not null default '{}'::jsonb,\n  updated_at timestamptz not null default now()\n);\n\ncreate table if not exists public.audit_logs (\n  id bigint generated always as identity primary key,\n  actor_id uuid references public.profiles(id),\n  action text not null,\n  target_id text,\n  details jsonb,\n  created_at timestamptz not null default now()\n);\n\nalter table public.profiles enable row level security;\nalter table public.user_app_state enable row level security;\nalter table public.audit_logs enable row level security;\n\ncreate policy \"profiles_select_self_or_admin\"\non public.profiles for select to authenticated\nusing (\n  id = auth.uid()\n  or exists (\n    select 1 from public.profiles p\n    where p.id = auth.uid() and p.perfil = 'ADMIN' and p.ativo\n  )\n);\n\ncreate policy \"state_select_own\"\non public.user_app_state for select to authenticated\nusing (user_id = auth.uid());\n\ncreate policy \"state_insert_own\"\non public.user_app_state for insert to authenticated\nwith check (user_id = auth.uid());\n\ncreate policy \"state_update_own\"\non public.user_app_state for update to authenticated\nusing (user_id = auth.uid())\nwith check (user_id = auth.uid());\n\ncreate policy \"state_delete_own\"\non public.user_app_state for delete to authenticated\nusing (user_id = auth.uid());\n\ncreate policy \"audit_select_admin\"\non public.audit_logs for select to authenticated\nusing (\n  exists (\n    select 1 from public.profiles p\n    where p.id = auth.uid() and p.perfil = 'ADMIN' and p.ativo\n  )\n);\n\ncreate or replace function public.handle_new_user()\nreturns trigger\nlanguage plpgsql\nsecurity definer set search_path = public\nas $$\nbegin\n  insert into public.profiles (id, nome, username, email, perfil, ativo)\n  values (\n    new.id,\n    coalesce(new.raw_user_meta_data->>'nome', split_part(new.email,'@',1)),\n    coalesce(new.raw_user_meta_data->>'username', split_part(new.email,'@',1)),\n    new.email,\n    coalesce(new.raw_user_meta_data->>'perfil','USUARIO'),\n    true\n  )\n  on conflict (id) do nothing;\n  return new;\nend;\n$$;\n\ndrop trigger if exists on_auth_user_created on auth.users;\ncreate trigger on_auth_user_created\nafter insert on auth.users\nfor each row execute function public.handle_new_user();\n\nalter publication supabase_realtime add table public.user_app_state;\n";
+  const setupEl = id => document.getElementById(id);
+  setupEl("setupSqlPreview").textContent = NIR_SETUP_SQL;
+
+  function setupMessage(id, message, ok){
+    const node = setupEl(id);
+    node.textContent = message;
+    node.className = "setup-message " + (ok ? "ok" : "error");
+  }
+
+  setupEl("setupSaveConnection").addEventListener("click", async () => {
+    const url = setupEl("setupUrl").value.trim().replace(/\/$/,"");
+    const key = setupEl("setupKey").value.trim();
+    if(!/^https:\/\/[a-z0-9-]+\.supabase\.co$/i.test(url) || !key){
+      setupMessage("setupConnectionMessage","Informe a Project URL e a Publishable key completas.",false);
+      return;
+    }
+    localStorage.setItem("nirSupabaseConfig", JSON.stringify({
+      SUPABASE_URL:url, SUPABASE_ANON_KEY:key, LOGIN_EMAIL_DOMAIN:"nircemetron.local"
+    }));
+    try{
+      const testClient = window.supabase.createClient(url,key);
+      const {error} = await testClient.from("profiles").select("id").limit(1);
+      if(error && (error.status === 401 || /invalid.*key|unauthorized/i.test(error.message))) throw error;
+      setupMessage("setupConnectionMessage","Conexão salva. A chave pública foi aceita.",true);
+      setupEl("setupStep1").classList.add("done");
+    }catch(error){
+      setupMessage("setupConnectionMessage","Falha na conexão: " + error.message,false);
+    }
+  });
+
+  setupEl("setupCopySql").addEventListener("click", async () => {
+    await navigator.clipboard.writeText(NIR_SETUP_SQL);
+    setupMessage("setupSchemaMessage","Script copiado. Cole no SQL Editor do Supabase e execute.",true);
+  });
+
+  setupEl("setupOpenSql").addEventListener("click", () => {
+    window.open("https://supabase.com/dashboard/project/cvtvtquyabfionisdfwg/sql/new","_blank","noopener");
+  });
+
+  setupEl("setupVerifySchema").addEventListener("click", async () => {
+    try{
+      const cfg = JSON.parse(localStorage.getItem("nirSupabaseConfig") || "null");
+      if(!cfg) throw new Error("Salve primeiro a conexão.");
+      const c = window.supabase.createClient(cfg.SUPABASE_URL,cfg.SUPABASE_ANON_KEY);
+      const {error} = await c.from("profiles").select("id").limit(1);
+      if(error) throw error;
+      setupMessage("setupSchemaMessage","Banco verificado com sucesso.",true);
+      setupEl("setupStep2").classList.add("done");
+    }catch(error){
+      setupMessage("setupSchemaMessage","O banco ainda não está pronto: " + error.message,false);
+    }
+  });
+
+  setupEl("setupCreateAdmin").addEventListener("click", async () => {
+    try{
+      const cfg = JSON.parse(localStorage.getItem("nirSupabaseConfig") || "null");
+      if(!cfg) throw new Error("Salve primeiro a conexão.");
+      const username = setupEl("setupAdminUsername").value.trim().toLowerCase();
+      const password = setupEl("setupAdminPassword").value;
+      const nome = setupEl("setupAdminName").value.trim();
+      if(!username || password.length < 8) throw new Error("Informe o usuário e uma senha com pelo menos 8 caracteres.");
+      const c = window.supabase.createClient(cfg.SUPABASE_URL,cfg.SUPABASE_ANON_KEY);
+      const email = `${username}@${cfg.LOGIN_EMAIL_DOMAIN || "nircemetron.local"}`;
+      const {data,error} = await c.auth.signUp({
+        email,password,options:{data:{nome,username,perfil:"ADMIN"}}
+      });
+      if(error && !/already registered/i.test(error.message)) throw error;
+      if(data?.user){
+        const {error:profileError} = await c.from("profiles").update({
+          nome,username,perfil:"ADMIN",ativo:true
+        }).eq("id",data.user.id);
+        if(profileError) throw profileError;
+      }
+      setupMessage("setupAdminMessage","Administrador criado. Usuário: " + username,true);
+      setupEl("setupStep3").classList.add("done");
+    }catch(error){
+      setupMessage("setupAdminMessage","Não foi possível criar o administrador: " + error.message,false);
+    }
+  });
+
+  setupEl("setupFinish").addEventListener("click", async () => {
+    if(!localStorage.getItem("nirSupabaseConfig")){
+      setupMessage("setupConnectionMessage","Configure a conexão antes de concluir.",false);
+      return;
+    }
+    setupEl("setupOverlay").classList.remove("open");
+    document.getElementById("cloudAuthOverlay").style.display = "grid";
+    await window.NIRCloud.reinitialize();
   });
 
   window.NIRCloud.init();
