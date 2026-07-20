@@ -558,8 +558,8 @@
     <h2>NIR CEMETRON</h2>
     <p>Acesse o sistema em nuvem para consultar o mesmo histórico em qualquer dispositivo.</p>
     <div id="cloudAuthError" class="cloud-auth-error"></div>
-    <label for="cloudEmail">E-mail</label>
-    <input id="cloudEmail" type="email" autocomplete="username" required placeholder="seuemail@dominio.com">
+    <label for="cloudUsername">Usuário</label>
+    <input id="cloudUsername" type="text" autocomplete="username" required placeholder="Ex.: stenio.andrade">
     <label for="cloudPassword" style="margin-top:12px">Senha</label>
     <input id="cloudPassword" type="password" autocomplete="current-password" required>
     <div class="cloud-auth-actions">
@@ -589,7 +589,7 @@
       <h3>Novo usuário</h3>
       <div class="form-grid">
         <div><label>Nome</label><input id="adminNewName" required></div>
-        <div><label>E-mail</label><input id="adminNewEmail" type="email" required></div>
+        <div><label>Login</label><input id="adminNewUsername" type="text" required placeholder="Ex.: nome.sobrenome"></div>
         <div><label>Senha inicial</label><input id="adminNewPassword" type="password" minlength="8" required></div>
         <div><label>Perfil</label><select id="adminNewRole"><option value="USUARIO">Usuário</option><option value="ADMIN">Administrador</option></select></div>
       </div>
@@ -2378,7 +2378,7 @@ background: $("background").value.trim(),
     async function fetchProfile(){
       const {data, error} = await client
         .from("profiles")
-        .select("id,nome,email,perfil,ativo")
+        .select("id,nome,username,email,perfil,ativo")
         .eq("id", currentUser.id)
         .maybeSingle();
       if(error) throw error;
@@ -2493,9 +2493,26 @@ background: $("background").value.trim(),
       });
     }
 
-    async function login(email,password){
+    function normalizeUsername(value){
+      return String(value || "")
+        .trim()
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^a-z0-9._-]/g, "");
+    }
+
+    function usernameToInternalEmail(username){
+      const normalized = normalizeUsername(username);
+      if(!normalized) throw new Error("Informe um nome de usuário válido.");
+      const domain = window.NIR_CONFIG.LOGIN_EMAIL_DOMAIN || "nircemetron.local";
+      return `${normalized}@${domain}`;
+    }
+
+    async function login(username,password){
+      const email = usernameToInternalEmail(username);
       const {data,error} = await client.auth.signInWithPassword({email,password});
-      if(error) throw error;
+      if(error) throw new Error("Usuário ou senha inválidos.");
       await afterLogin(data.user);
     }
 
@@ -2518,7 +2535,7 @@ background: $("background").value.trim(),
         const result = await invokeAdmin({action:"list"});
         target.innerHTML = (result.users || []).map(user => `
           <div class="cloud-user-row">
-            <div><strong>${escapeHtml(user.nome || "")}</strong><br><span class="note">${escapeHtml(user.email || "")}</span></div>
+            <div><strong>${escapeHtml(user.nome || "")}</strong><br><span class="note">@${escapeHtml(user.username || "")}</span></div>
             <div>${escapeHtml(user.perfil || "USUARIO")}</div>
             <div>${user.ativo ? "Ativo" : "Inativo"}</div>
             <button class="btn btn-secondary" onclick="NIRCloud.toggleUser('${user.id}',${!user.ativo})">${user.ativo ? "Inativar" : "Ativar"}</button>
@@ -2549,7 +2566,7 @@ background: $("background").value.trim(),
     document.getElementById("cloudAuthError").style.display = "none";
     try{
       await window.NIRCloud.login(
-        document.getElementById("cloudEmail").value.trim(),
+        document.getElementById("cloudUsername").value.trim(),
         document.getElementById("cloudPassword").value
       );
     }catch(error){
@@ -2572,7 +2589,7 @@ background: $("background").value.trim(),
     try{
       await window.NIRCloud.createUser({
         nome:document.getElementById("adminNewName").value.trim(),
-        email:document.getElementById("adminNewEmail").value.trim(),
+        username:document.getElementById("adminNewUsername").value.trim(),
         password:document.getElementById("adminNewPassword").value,
         perfil:document.getElementById("adminNewRole").value
       });

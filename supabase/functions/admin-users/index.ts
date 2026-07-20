@@ -34,22 +34,32 @@ Deno.serve(async (req) => {
 
     if (body.action === "list") {
       const { data, error } = await admin.from("profiles")
-        .select("id,nome,email,perfil,ativo,created_at").order("nome");
+        .select("id,nome,username,email,perfil,ativo,created_at").order("nome");
       if (error) throw error;
       return json({ users: data });
     }
 
     if (body.action === "create") {
-      if (!body.email || !body.password || String(body.password).length < 8) {
-        throw new Error("E-mail e senha de pelo menos 8 caracteres são obrigatórios.");
+      const username = String(body.username || "")
+        .trim()
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\\u0300-\\u036f]/g, "")
+        .replace(/[^a-z0-9._-]/g, "");
+
+      if (!username || !body.password || String(body.password).length < 8) {
+        throw new Error("Login válido e senha de pelo menos 8 caracteres são obrigatórios.");
       }
 
+      const internalEmail = `${username}@nircemetron.local`;
+
       const { data, error } = await admin.auth.admin.createUser({
-        email: String(body.email).toLowerCase(),
+        email: internalEmail,
         password: String(body.password),
         email_confirm: true,
         user_metadata: {
           nome: String(body.nome || ""),
+          username,
           perfil: body.perfil === "ADMIN" ? "ADMIN" : "USUARIO"
         }
       });
@@ -57,13 +67,14 @@ Deno.serve(async (req) => {
 
       await admin.from("profiles").update({
         nome: String(body.nome || ""),
+        username,
         perfil: body.perfil === "ADMIN" ? "ADMIN" : "USUARIO",
         ativo: true
       }).eq("id", data.user.id);
 
       await admin.from("audit_logs").insert({
         actor_id: user.id, action: "CRIACAO_USUARIO",
-        target_id: data.user.id, details: { email: body.email, perfil: body.perfil }
+        target_id: data.user.id, details: { username, perfil: body.perfil }
       });
 
       return json({ ok: true });

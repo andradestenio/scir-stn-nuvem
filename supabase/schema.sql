@@ -3,6 +3,7 @@ create extension if not exists pgcrypto;
 create table if not exists public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   nome text not null,
+  username text not null unique,
   email text not null unique,
   perfil text not null default 'USUARIO' check (perfil in ('ADMIN','USUARIO')),
   ativo boolean not null default true,
@@ -71,10 +72,11 @@ language plpgsql
 security definer set search_path = public
 as $$
 begin
-  insert into public.profiles (id, nome, email, perfil, ativo)
+  insert into public.profiles (id, nome, username, email, perfil, ativo)
   values (
     new.id,
     coalesce(new.raw_user_meta_data->>'nome', split_part(new.email,'@',1)),
+    coalesce(new.raw_user_meta_data->>'username', split_part(new.email,'@',1)),
     new.email,
     coalesce(new.raw_user_meta_data->>'perfil','USUARIO'),
     true

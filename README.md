@@ -1,63 +1,82 @@
-# NIR CEMETRON — versão em nuvem
+# NIR CEMETRON — versão em nuvem com login por usuário
 
-Esta versão mantém a interface atual e substitui o armazenamento exclusivamente local por sincronização no Supabase.
+Esta versão mantém a interface atual e sincroniza os dados com o Supabase.
+
+## Credenciais iniciais planejadas
+
+```text
+Usuário: stenio.andrade
+Senha: 99663831
+Perfil: ADMIN
+```
+
+A tela mostra somente **Usuário** e **Senha**. Internamente, o Supabase exige um identificador de e-mail; o sistema converte automaticamente `stenio.andrade` em `stenio.andrade@nircemetron.local`. Esse endereço técnico nunca precisa ser digitado pelo usuário.
 
 ## Recursos implementados
 
-- autenticação por e-mail e senha;
-- histórico persistente na nuvem;
-- acesso aos mesmos dados em diferentes dispositivos;
-- migração automática do histórico existente no `localStorage`;
+- login por nome de usuário;
+- autenticação segura pelo Supabase;
+- dados persistentes na nuvem;
+- acesso em diferentes dispositivos;
+- migração automática do `localStorage`;
 - sincronização em tempo real;
-- cópia local de segurança;
 - perfis `ADMIN` e `USUARIO`;
-- administração de usuários por função segura;
-- políticas RLS no PostgreSQL;
-- auditoria de criação, ativação e inativação de usuários.
+- cadastro, ativação e inativação de usuários;
+- políticas RLS;
+- auditoria administrativa.
 
-## 1. Criar o projeto no Supabase
+## 1. Criar o projeto Supabase
 
-1. Acesse o Supabase e crie um projeto.
-2. Abra **SQL Editor**.
-3. Execute integralmente o arquivo `supabase/schema.sql`.
+Crie o projeto e execute integralmente no SQL Editor:
 
-## 2. Criar o primeiro administrador
+```text
+supabase/schema.sql
+```
 
-No Supabase:
+## 2. Criar o administrador inicial
 
-1. Abra **Authentication > Users**.
-2. Selecione **Add user > Create new user**.
-3. Informe seu e-mail e uma senha segura.
-4. Marque o e-mail como confirmado.
+No Supabase, abra **Authentication > Users > Add user** e cadastre:
 
-Depois, no **SQL Editor**, execute, substituindo o e-mail:
+```text
+E-mail técnico: stenio.andrade@nircemetron.local
+Senha: 99663831
+Confirmar e-mail: sim
+```
+
+Depois execute no SQL Editor:
 
 ```sql
 update public.profiles
-set perfil = 'ADMIN', nome = 'Stênio Andrade', ativo = true
-where email = 'SEU_EMAIL';
+set
+  username = 'stenio.andrade',
+  nome = 'Stênio Andrade',
+  perfil = 'ADMIN',
+  ativo = true
+where email = 'stenio.andrade@nircemetron.local';
+```
+
+A partir daí, na tela do sistema, use apenas:
+
+```text
+Usuário: stenio.andrade
+Senha: 99663831
 ```
 
 ## 3. Configurar o site
 
-Abra o arquivo `config.js` e substitua:
+Edite `config.js`:
 
 ```js
 window.NIR_CONFIG = {
   SUPABASE_URL: "https://SEU-PROJETO.supabase.co",
-  SUPABASE_ANON_KEY: "SUA_CHAVE_PUBLICA_ANON"
+  SUPABASE_ANON_KEY: "SUA_CHAVE_PUBLICA_ANON",
+  LOGIN_EMAIL_DOMAIN: "nircemetron.local"
 };
 ```
 
-As informações ficam em **Project Settings > API**.
+Nunca coloque a chave `service_role` no navegador.
 
-A chave pública/anon pode ficar no navegador porque a segurança efetiva é aplicada pelas políticas RLS. Nunca coloque a chave `service_role` no `config.js`.
-
-## 4. Implantar a função administrativa
-
-A página de usuários depende da Edge Function `admin-users`.
-
-Com a CLI do Supabase:
+## 4. Publicar a função administrativa
 
 ```bash
 supabase login
@@ -65,15 +84,9 @@ supabase link --project-ref SEU_PROJECT_REF
 supabase functions deploy admin-users
 ```
 
-O Supabase fornece automaticamente as variáveis `SUPABASE_URL`, `SUPABASE_ANON_KEY` e `SUPABASE_SERVICE_ROLE_KEY` à função.
+Sem essa função, o login e a sincronização continuam funcionando, mas o cadastro de usuários pela tela administrativa não funcionará.
 
-Sem essa função, login e sincronização funcionam normalmente; apenas o cadastro de usuários pela interface administrativa ficará indisponível.
-
-## 5. Publicar no GitHub e Vercel
-
-Envie todos os arquivos para a raiz do repositório.
-
-Na Vercel:
+## 5. Vercel
 
 - Framework Preset: `Other`
 - Root Directory: `./`
@@ -83,24 +96,10 @@ Na Vercel:
 
 O projeto é estático e não executa `npm install`.
 
-## Migração do histórico local
+## Migração do histórico
 
-No primeiro login:
+No primeiro login, se ainda não houver dados na nuvem, o sistema envia automaticamente o histórico existente no navegador. Depois, cada alteração é sincronizada com o Supabase.
 
-- se existir estado na nuvem, ele será carregado;
-- se não existir estado na nuvem e houver histórico no navegador, o histórico local será enviado automaticamente;
-- depois disso, todas as alterações são sincronizadas com o Supabase.
+## Observação de segurança
 
-## Segurança assistencial
-
-Como o sistema contém dados identificáveis de pacientes, configure:
-
-- senhas individuais;
-- acesso somente aos profissionais autorizados;
-- revisão periódica dos usuários ativos;
-- política institucional de privacidade e retenção;
-- termo de responsabilidade;
-- backups e plano de contingência;
-- domínio restrito, quando aplicável.
-
-Esta implementação fornece a base técnica, mas não substitui a avaliação institucional de LGPD, segurança da informação e governança clínica.
+A senha inicial deve ser alterada após a implantação. O sistema contém dados assistenciais e deve ser usado somente por profissionais autorizados, com governança institucional, controles de acesso e medidas compatíveis com a LGPD.
